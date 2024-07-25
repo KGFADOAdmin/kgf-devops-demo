@@ -1,0 +1,61 @@
+trigger:
+  branches:
+    exclude:
+      - '*'
+
+pr:
+  branches:
+    include:
+      - '*'
+
+stages:
+- stage: Pull_Request_Validation 
+  jobs:
+  - job: Build
+    pool:
+      vmImage: ubuntu-latest 
+    steps:
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '20.13.0'  # Node version
+      displayName: 'Install Node.js'
+    - script: |
+        npm install -g npm 
+        npm install
+      displayName: 'Install dependencies'
+    - script: npm run build 
+      displayName: 'Build Next.js application'
+    - publish: $(System.DefaultWorkingDirectory)/build  # Publish build artifacts
+    
+  - job: SecurityScan
+    dependsOn: Build  # Run scan after build completes
+    condition: succeeded()  # Only run scan if build succeeds
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+    - task: SnykSecurityScan@1
+      inputs:
+        serviceConnectionEndpoint: 'KGFADOAdmin-Snyk'
+        testType: 'app'
+        severityThreshold: 'medium'
+        monitorWhen: 'always'
+        failOnIssues: true
+        projectName: 'frontend-nextjs-logs'
+        organization: 'KGFADOAdmin'
+
+  - job: Test
+    dependsOn: SecurityScan  # Run tests after build completes
+    condition: succeeded()  # Only run tests if build succeeds
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '20.13.0'
+      displayName: 'Install Node.js'
+    - script: npm install  # Restore project dependencies
+      displayName: 'Install dependencies'
+    - script: npm test -- --watchAll # Run Jest tests
+      displayName: 'Run Jest tests'
+      env:
+        TEST_RESULTS_FILE: $(System.DefaultWorkingDirectory)/test-results.xml  # Optional: Define output file for test results
